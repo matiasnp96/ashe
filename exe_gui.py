@@ -32,6 +32,7 @@ import concurrent.futures
 import emoji
 import urllib3
 import socket
+from selenium.webdriver.common.action_chains import ActionChains
 
 # Emojis directos usando UTF-8
 EMOJI_SEARCH = "🔍"  # U+1F50D
@@ -50,8 +51,27 @@ class ScraperGUI:
         self.root.title("Hotel Email Scraper")
         self.root.configure(bg='#1E1E1E')
         
-        # Cargar fuente Montserrat
-        self.load_custom_font()
+        # Cargar fuente personalizada
+        self.custom_font = ('Segoe UI', 10)
+        self.custom_font_bold = ('Segoe UI', 10, 'bold')
+        
+        # Configuración por defecto
+        self.config = {
+            'excluded_domains': [
+                'bluepillow',
+                'booking.com',
+                'tripadvisor',
+                'expedia',
+                'hotels.com',
+                'kayak',
+                'trivago',
+                'agoda',
+                'hoteles.com',
+                'despegar',
+                'almundo',
+                'airbnb'
+            ]
+        }
         
         # Variables
         self.scraping_active = False
@@ -517,44 +537,23 @@ class ScraperGUI:
                     time.sleep(3)
                     
                     max_paginas = int(self.pages_var.get())
-                    urls_guardadas = set()
                     
-                    def log_callback(message):
-                        self.scraper_text.insert(tk.END, message + "\n")
-                        self.scraper_text.see(tk.END)
-                        self.root.update_idletasks()
-                    
-                    result = recolectar_urls_hoteles(
-                        driver=driver,
+                    urls_guardadas = self.recolectar_urls_hoteles(
                         ciudad=city,
-                        output_file=output_file,
-                        urls_guardadas=urls_guardadas,
-                        max_paginas=max_paginas,
-                        scraping_active_check=lambda: self.scraping_active,
-                        hoteles_por_pagina=hoteles_por_pagina,
-                        log_callback=log_callback  # Agregar callback para logging
+                        pais=country,
+                        paginas=max_paginas,
+                        hoteles_por_pagina=hoteles_por_pagina
                     )
                     
-                    if result['success']:
-                        if result['stopped']:
-                            self.scraper_text.insert(tk.END, f"\nProceso detenido en {city}")
-                            self.scraper_text.see(tk.END)
-                            self.root.update_idletasks()
-                            break
-                        else:
-                            self.scraper_text.insert(tk.END, f"\nURLs guardadas en: {output_file}")
-                            self.scraper_text.see(tk.END)
-                            self.root.update_idletasks()
-                            # Mostrar las URLs encontradas
-                            for url in result['urls_guardadas']:
-                                self.scraper_text.insert(tk.END, f"✓ {url}\n")
-                                self.scraper_text.see(tk.END)
-                                self.root.update_idletasks()
-                    else:
-                        self.scraper_text.insert(tk.END, f"Error recolectando URLs en {city}: {result.get('error', 'Error desconocido')}\n")
+                    # Guardar URLs en archivo
+                    if urls_guardadas:
+                        with open(output_file, 'w', encoding='utf-8') as f:
+                            for url in urls_guardadas:
+                                f.write(f"{url}\n")
+                        self.scraper_text.insert(tk.END, f"\nURLs guardadas en: {output_file}")
                         self.scraper_text.see(tk.END)
                         self.root.update_idletasks()
-                
+                    
                 except Exception as e:
                     self.scraper_text.insert(tk.END, f"Error procesando {city}: {str(e)}\n")
                     self.scraper_text.see(tk.END)
@@ -870,6 +869,7 @@ class ScraperGUI:
     def build_search_url(self, city, country):
         """Construye la URL de búsqueda para Google Travel"""
         base_url = "https://www.google.com/travel/hotels"
+        # Formatear ciudad y país para la URL
         city_query = f"{city}, {country}".replace(" ", "%20")
         return f"{base_url}?q=hotels%20in%20{city_query}"
 
@@ -987,6 +987,102 @@ class ScraperGUI:
                 pass
             self.current_driver = None
         self.update_buttons_state(False)
+
+    def recolectar_urls_hoteles(self, ciudad, pais, paginas=3, hoteles_por_pagina=5):
+        """Recolecta URLs de hoteles usando Selenium"""
+        urls_hoteles = set()
+        dominios_excluidos = self.config['excluded_domains'] + ['maps.google']
+        
+        def decodificar_url(url):
+            """Decodifica una URL que contiene caracteres Unicode escapados"""
+            return url.encode('utf-8').decode('unicode-escape').replace('\\/', '/')
+        
+        def extraer_urls_pagina(html):
+            """Extrae y procesa las URLs de una página"""
+            urls_pagina = set()
+            patron_json = r'\[null,null,"(https?://[^"]+?)"\]'
+            urls_encontradas = re.findall(patron_json, html)
+            
+            for url in urls_encontradas:
+                if 'maps.google' in url or '/maps?' in url:
+                    continue
+                    
+                if not any(dominio in url.lower() for dominio in dominios_excluidos):
+                    url_decodificada = decodificar_url(url)
+                    urls_pagina.add(url_decodificada)
+            
+            return urls_pagina
+        
+        try:
+            driver = self.current_driver
+            pagina = 1
+            
+            while pagina <= paginas:
+                print(f"\n📄 Procesando página {pagina} de {paginas}...")
+                
+                # Esperar a que los elementos de hotel estén presentes
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "div[jscontroller][jsaction*='mouseover']"))
+                )
+                
+                # Procesar página actual
+                html_actual = driver.page_source
+                urls_pagina_actual = extraer_urls_pagina(html_actual)
+                
+                print(f"\n   🔍 URLs encontradas en página {pagina}:")
+                for url in urls_pagina_actual:
+                    print(f"      → {url}")
+                    urls_hoteles.add(url)
+                
+                print(f"\n   ✨ URLs únicas en esta página: {len(urls_pagina_actual)}")
+                
+                # Si no es la última página, cambiar de página
+                if pagina < paginas:
+                    try:
+                        # Encontrar el botón siguiente
+                        next_button = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, "button.VfPpkd-LgbsSe[jsname='OCpkoe']"))
+                        )
+                        
+                        # Guardar el HTML actual para comparar
+                        html_antes = driver.page_source
+                        
+                        # Click con JavaScript
+                        driver.execute_script("arguments[0].click();", next_button)
+                        print("\n   ⏳ Esperando actualización de contenido...")
+                        
+                        # Esperar a que el contenido cambie
+                        def contenido_actualizado(d):
+                            nuevo_html = d.page_source
+                            return nuevo_html != html_antes and len(re.findall(r'\[null,null,"(https?://[^"]+?)"\]', nuevo_html)) > 0
+                        
+                        WebDriverWait(driver, 10).until(contenido_actualizado)
+                        print("   ✅ Contenido actualizado")
+                        pagina += 1
+                        
+                    except Exception as e:
+                        print(f"   ❌ Error al cambiar de página: {str(e)}")
+                        break
+                else:
+                    break
+        
+        except Exception as e:
+            print(f"   ❌ Error recolectando URLs: {str(e)}")
+        
+        # Guardar las URLs encontradas
+        if urls_hoteles:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"urls_hoteles_{ciudad}_{timestamp}.txt"
+            try:
+                with open(filename, 'w', encoding='utf-8') as f:
+                    for url in urls_hoteles:
+                        f.write(url + '\n')
+                print(f"\n📁 URLs guardadas en: {filename}")
+            except Exception as e:
+                print(f"❌ Error al guardar las URLs: {str(e)}")
+        
+        print(f"\n✨ Total de URLs únicas encontradas: {len(urls_hoteles)}")
+        return list(urls_hoteles)
 
 def main():
     root = tk.Tk()
