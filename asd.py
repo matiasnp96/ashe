@@ -1001,74 +1001,77 @@ class ScraperGUI:
             driver = self.current_driver
             pagina = 1
             
-            while pagina <= paginas:
+            def esperar_carga_pagina():
+                try:
+                    # Esperar a que el botón "Siguiente" esté visible
+                    WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.XPATH, "//button[contains(@aria-label, 'Siguiente')]"))
+                    )
+                    return True
+                except Exception as e:
+                    print(f"   ❌ Error al esperar la carga de la página: {e}")
+                    return False
+
+            for pagina in range(1, paginas + 1):
                 print(f"\n📄 Procesando página {pagina} de {paginas}...")
                 
-                # Esperar a que los elementos de hotel estén presentes
-                elementos_hotel = WebDriverWait(driver, 10).until(
-                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div[jscontroller][jsaction*='mouseover']"))
-                )
+                # Esperar a que la página cargue
+                if not esperar_carga_pagina():
+                    print("   ⚠️ No se pudo cargar la página correctamente")
+                    break
                 
-                print(f"\n   📍 Encontrados {len(elementos_hotel)} elementos de hotel")
-                
-                # Hacer scroll para cargar todos los elementos
-                for elemento in elementos_hotel:
-                    driver.execute_script("arguments[0].scrollIntoView(true);", elemento)
-                    time.sleep(0.5)
-                
-                # Obtener el HTML actualizado después del scroll
-                html = driver.page_source
-                
-                # Debug: Buscar diferentes patrones de URL en el HTML
-                patrones = [
-                    r'\[null,null,"(https?://[^"]+?)"\]'  # Patrón simplificado que funciona
-                ]
-                
-                print("\n   🔍 Buscando URLs en estructuras JSON:")
+                # Obtener el HTML actual
+                html_actual = driver.page_source
                 urls_pagina_actual = set()
                 
-                for patron in patrones:
-                    urls_encontradas = re.findall(patron, html)
-                    print(f"\n      Patrón '{patron}':")
-                    print(f"      Coincidencias encontradas: {len(urls_encontradas)}")
-                    for url in urls_encontradas:  # Ahora solo capturamos la URL
-                        if not any(dominio in url.lower() for dominio in dominios_excluidos):
-                            url_decodificada = decodificar_url(url)
-                            print(f"         → {url_decodificada}")
-                            urls_pagina_actual.add(url_decodificada)
-                            urls_hoteles.add(url_decodificada)
+                # Extraer URLs
+                patron = r'\[null,null,"(https?://[^"]+?)"\]'
+                urls_encontradas = re.findall(patron, html_actual)
+                
+                print(f"\n   🔍 URLs encontradas en página {pagina}:")
+                for url in urls_encontradas:
+                    if not any(dominio in url.lower() for dominio in dominios_excluidos):
+                        url_decodificada = decodificar_url(url)
+                        print(f"      → {url_decodificada}")
+                        urls_pagina_actual.add(url_decodificada)
+                        urls_hoteles.add(url_decodificada)
                 
                 print(f"\n   ✨ URLs únicas en esta página: {len(urls_pagina_actual)}")
-                print("   📋 URLs encontradas en esta página:")
-                for url in urls_pagina_actual:
-                    print(f"      ✅ {url}")
                 
-                # Si no es la última página, cambiar de página
+                # Si no es la última página, cambiar a la siguiente
                 if pagina < paginas:
                     try:
-                        # Encontrar el botón siguiente
-                        next_button = WebDriverWait(driver, 5).until(
-                            EC.element_to_be_clickable((By.CSS_SELECTOR, "button.VfPpkd-LgbsSe[jsname='OCpkoe']"))
+                        # Encontrar el botón y asegurarse de que sea clickeable
+                        boton_siguiente = WebDriverWait(driver, 10).until(
+                            EC.element_to_be_clickable((By.XPATH, "//button[contains(@aria-label, 'Siguiente')]"))
                         )
                         
-                        # Click con JavaScript
-                        driver.execute_script("arguments[0].click();", next_button)
-                        print("\n   ⏳ Esperando actualización de página...")
+                        # Scroll hasta el botón para asegurarnos de que sea visible
+                        driver.execute_script("arguments[0].scrollIntoView(true);", boton_siguiente)
+                        time.sleep(1)  # Pequeña pausa después del scroll
                         
-                        # Esperar a que los elementos actuales desaparezcan
-                        elemento_referencia = elementos_hotel[0]
-                        WebDriverWait(driver, 10).until(
-                            EC.staleness_of(elemento_referencia)
-                        )
+                        # Intentar click con JavaScript si el click normal falla
+                        try:
+                            boton_siguiente.click()
+                        except:
+                            driver.execute_script("arguments[0].click();", boton_siguiente)
+                            
+                        print("\n   ⏳ Esperando carga de siguiente página...")
                         
-                        print("   ✅ Página actualizada")
-                        pagina += 1
+                        # Espera inicial
+                        time.sleep(3)
+                        
+                        # Forzar actualización del DOM con scroll
+                        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                        time.sleep(2)  # Esperar después del scroll
+                        
+                        # Scroll hacia arriba para asegurar que vemos todo el contenido
+                        driver.execute_script("window.scrollTo(0, 0);")
+                        time.sleep(1)
                         
                     except Exception as e:
                         print(f"   ❌ Error al cambiar de página: {str(e)}")
                         break
-                else:
-                    break
         
         except Exception as e:
             print(f"   ❌ Error recolectando URLs: {str(e)}")
