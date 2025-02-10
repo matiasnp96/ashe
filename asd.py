@@ -1041,21 +1041,17 @@ class ScraperGUI:
                 # Si no es la última página, cambiar a la siguiente
                 if pagina < paginas:
                     try:
-                        # Encontrar el botón y asegurarse de que sea clickeable
+                        # Encontrar el botón por el texto "Siguiente" que es más confiable
                         boton_siguiente = WebDriverWait(driver, 10).until(
-                            EC.element_to_be_clickable((By.XPATH, "//button[contains(@aria-label, 'Siguiente')]"))
+                            EC.element_to_be_clickable((By.XPATH, "//span[text()='Siguiente']"))
                         )
                         
                         # Scroll hasta el botón para asegurarnos de que sea visible
                         driver.execute_script("arguments[0].scrollIntoView(true);", boton_siguiente)
                         time.sleep(1)  # Pequeña pausa después del scroll
                         
-                        # Intentar click con JavaScript si el click normal falla
-                        try:
-                            boton_siguiente.click()
-                        except:
-                            driver.execute_script("arguments[0].click();", boton_siguiente)
-                            
+                        # Click en el botón
+                        boton_siguiente.click()
                         print("\n   ⏳ Esperando carga de siguiente página...")
                         
                         # Espera inicial
