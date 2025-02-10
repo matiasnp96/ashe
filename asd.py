@@ -1021,7 +1021,7 @@ class ScraperGUI:
                 
                 # Debug: Buscar diferentes patrones de URL en el HTML
                 patrones = [
-                    r'\["([^"]+)"\]\],null,null,null,null,\[null,null,"(https?://[^"]+?)"\]'  # Patrón para Google Travel
+                    r'\[null,null,"(https?://[^"]+?)"\]'  # Patrón simplificado que funciona
                 ]
                 
                 print("\n   🔍 Buscando URLs en estructuras JSON:")
@@ -1030,10 +1030,11 @@ class ScraperGUI:
                 for patron in patrones:
                     urls_encontradas = re.findall(patron, html)
                     print(f"\n      Patrón '{patron}':")
-                    for nombre_hotel, url in urls_encontradas:
+                    print(f"      Coincidencias encontradas: {len(urls_encontradas)}")
+                    for url in urls_encontradas:  # Ahora solo capturamos la URL
                         if not any(dominio in url.lower() for dominio in dominios_excluidos):
                             url_decodificada = decodificar_url(url)
-                            print(f"         → {nombre_hotel}: {url_decodificada}")
+                            print(f"         → {url_decodificada}")
                             urls_pagina_actual.add(url_decodificada)
                             urls_hoteles.add(url_decodificada)
                 
