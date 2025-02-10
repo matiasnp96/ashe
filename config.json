@@ -1,0 +1,25 @@
+{
+    "email_validation": {
+        "api_key": "299337569f8143a2854baf0c3c9d1142",
+        "enabled": true
+    },
+    "scraping": {
+        "timeout": 15,
+        "max_retries": 3,
+        "max_threads": 10
+    },
+    "excluded_domains": [
+        "bluepillow",
+        "booking.com",
+        "tripadvisor",
+        "expedia",
+        "hotels.com",
+        "kayak",
+        "trivago",
+        "agoda",
+        "hoteles.com",
+        "despegar",
+        "almundo",
+        "airbnb"
+    ]
+}
